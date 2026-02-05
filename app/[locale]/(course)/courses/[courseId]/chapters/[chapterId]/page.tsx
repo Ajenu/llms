@@ -29,7 +29,6 @@ const page = async({ params } : Props) => {
     const {
         chapter,
         course,
-        muxData,
         attachments,
         nextChapter,
         purchase,
@@ -68,7 +67,7 @@ const page = async({ params } : Props) => {
                         chapterId={chapter.id}
                         title={chapter.title}
                         courseId={params.courseId}
-                        playbackId={muxData?.playbackId!}
+                        videoUrl={chapter.videoUrl!}
                         isLocked={isLocked}
                         completeOnEnd={completeOnEnd}
                         nextChapterId={nextChapter?.id}

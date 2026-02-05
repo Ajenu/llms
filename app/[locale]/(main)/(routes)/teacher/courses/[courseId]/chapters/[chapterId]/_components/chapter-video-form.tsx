@@ -9,14 +9,13 @@ import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { updateChapterVideo, updateCourseImage } from '@/data'
 import Image from 'next/image'
-import FileUpload from '@/components/global/file-upload'
-import { Chapter, Course, MuxData } from '@prisma/client'
+import SupabaseVideoUpload from '@/components/global/supabase-video-upload'
+import { Chapter, Course } from '@prisma/client'
 import { videoSchema } from '@/schemas'
-import MuxPlayer from '@mux/mux-player-react'
 import { useI18n } from '@/locales/client'
 
 type Props = {
-    initialData: Chapter & { muxData?: MuxData | null}
+    initialData: Chapter
     courseId: string
     chapterId: string
 }
@@ -80,8 +79,10 @@ const ChapterVideoForm = ({ courseId, initialData, chapterId } : Props) => {
                         </div>
                     ) : (
                         <div className='relative aspect-video mt-2'>
-                            <MuxPlayer 
-                                playbackId={initialData.muxData?.playbackId || ''}
+                            <video
+                                className='w-full h-full'
+                                controls
+                                src={initialData.videoUrl || ''}
                             />
                         </div>
                     )
@@ -90,13 +91,13 @@ const ChapterVideoForm = ({ courseId, initialData, chapterId } : Props) => {
             {
                 isEditing && (
                     <div>
-                        <FileUpload
-                            endpoint="courseVideo"
-                            onChange={(url) => {
+                        <SupabaseVideoUpload
+                            onChange={(url?: string) => {
                                 if (url) {
                                     onSubmit({'videoUrl': url})
                                 }
                             }}
+                            value={initialData.videoUrl || undefined}
                         />
                     </div>
                 )

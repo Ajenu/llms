@@ -5,7 +5,7 @@ import { db } from "@/lib/db"
 import { formatPrice } from "@/lib/format"
 import { stripe } from "@/lib/stripe"
 import { CourseProgressWithCatgeroy, CourseWithCategory, DashboardCoursesWithProgressWithCategory, GetCourses, GetCoursesWithoutProgress } from "@/lib/types"
-import Mux from "@mux/mux-node"
+import { supabaseAdmin, SUPABASE_STORAGE_BUCKET } from "@/lib/supabase"
 import { Attachment, Chapter } from "@prisma/client"
 import { url } from "inspector"
 import { redirect } from "next/navigation"
@@ -336,9 +336,6 @@ export const getChapter = async (
             where: {
                 id: chapterId,
                 courseId: courseId
-            },
-            include: {
-                muxData: true
             }
         })
 
@@ -431,10 +428,6 @@ export const updateChapterisFree = async (
 }
 
 
-const { video } = new Mux({
-    tokenId: process.env.MUX_TOKEN_ID,
-    tokenSecret: process.env.MUX_TOKEN_SECRET
-})
 export const updateChapterVideo = async (
     courseId: string,
     data: { videoUrl: string },
@@ -443,7 +436,8 @@ export const updateChapterVideo = async (
     try {
         const user = await _isUserAuth()
 
-
+        // The videoUrl is now already a Supabase URL from direct upload
+        // Just update the chapter with the URL
         const chapter = await db.chapter.update({
             where: {
                 id: chapterId,
@@ -453,37 +447,6 @@ export const updateChapterVideo = async (
                 videoUrl: data.videoUrl
             }
         })
-
-        if (data.videoUrl) {
-            const existingMuxData = await db.muxData.findFirst({
-                where: {
-                    chapterId: chapterId
-                }
-            })
-            if (existingMuxData) {
-                
-                await video.assets.delete(existingMuxData.assetId)
-                await db.muxData.delete({
-                    where: {
-                        id: existingMuxData.id
-                    }
-                })
-            }
-
-            const asset = await video.assets.create({
-                input: [{ url: data.videoUrl, }],
-                playback_policy: ["public"],
-                test: false
-            })
-            await db.muxData.create({
-                data: {
-                    assetId: asset.id,
-                    chapterId: chapterId,
-                    playbackId: asset.playback_ids?.[0]?.id,
-                }
-            })
-        }
-
 
         return chapter
     } catch (error) {
@@ -511,18 +474,25 @@ export const deleteChapter = async (
         }
 
         if (chapter.videoUrl) {
-            const muxData = await db.muxData.findFirst({
-                where: {
-                    chapterId: chapterId
-                }
-            })
-            if (muxData) {
-                await video.assets.delete(muxData.assetId)
-                await db.muxData.delete({
-                    where: {
-                        id: muxData.id
+            // Extract filename from Supabase URL
+            // Supabase URLs look like: https://project-id.supabase.co/storage/v1/object/public/course-videos/filename
+            try {
+                const url = new URL(chapter.videoUrl)
+                const pathParts = url.pathname.split('/')
+                const fileName = pathParts[pathParts.length - 1]
+                
+                if (fileName) {
+                    // Delete video from Supabase Storage
+                    const { error: deleteError } = await supabaseAdmin.storage
+                        .from(SUPABASE_STORAGE_BUCKET)
+                        .remove([fileName])
+                    
+                    if (deleteError) {
+                        console.error('Failed to delete video from storage:', deleteError)
                     }
-                })
+                }
+            } catch (error) {
+                console.error('Failed to parse video URL for deletion:', error)
             }
         }
 
@@ -661,11 +631,7 @@ export const publishCourse = async (
                 id: courseId
             },
             include: {
-                chapters: {
-                    include: {
-                        muxData: true
-                    }
-                }
+                chapters: true
             }
         })
 
@@ -708,11 +674,7 @@ export const deleteCourse = async (
                 teacherId: user.id
             },
             include: {
-                chapters: {
-                    include: {
-                        muxData: true
-                    }
-                }
+                chapters: true
             }
         })
         if (!course) {
@@ -720,9 +682,27 @@ export const deleteCourse = async (
         }
 
         for (let chapter of course.chapters) {
-            if (chapter.muxData?.assetId){
-                await video.assets.delete(chapter.muxData.assetId)
-            }   
+            if (chapter.videoUrl) {
+                // Extract filename from Supabase URL
+                try {
+                    const url = new URL(chapter.videoUrl)
+                    const pathParts = url.pathname.split('/')
+                    const fileName = pathParts[pathParts.length - 1]
+                    
+                    if (fileName) {
+                        // Delete video from Supabase Storage
+                        const { error: deleteError } = await supabaseAdmin.storage
+                            .from(SUPABASE_STORAGE_BUCKET)
+                            .remove([fileName])
+                        
+                        if (deleteError) {
+                            console.error('Failed to delete video from storage:', deleteError)
+                        }
+                    }
+                } catch (error) {
+                    console.error('Failed to parse video URL for deletion:', error)
+                }
+            }
         }
   
         const deleteCourse = await db.course.delete({
@@ -748,11 +728,7 @@ export const getCourses = async () => {
                 teacherId: user.id
             },
             include: {
-                chapters: {
-                    include: {
-                        muxData: true
-                    }
-                }
+                chapters: true
             },
             orderBy: {
                 createdAt: "desc"
@@ -1035,7 +1011,6 @@ export const getChapterForUser = async ({
             throw new Error("Chapter or course not found")
         }
 
-        let muxData = null
         let attachments: Attachment[] = []
         let nextChapter: Chapter | null = null
 
@@ -1050,11 +1025,6 @@ export const getChapterForUser = async ({
         }
 
         if (purchase || chapter.isFree) {
-            muxData = await db.muxData.findFirst({
-                where: {
-                    chapterId: chapterId
-                }
-            })
             nextChapter = await db.chapter.findFirst({
                 where: {
                     courseId: courseId,
@@ -1080,7 +1050,6 @@ export const getChapterForUser = async ({
         return {
             chapter,
             course,
-            muxData,
             attachments,
             nextChapter,
             userProgress,
@@ -1091,7 +1060,6 @@ export const getChapterForUser = async ({
         return {
             chapter: null,
             course: null,
-            muxData: null,
             attachments: [],
             nextChapter: null,
             userProgress: null,

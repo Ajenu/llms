@@ -3,7 +3,6 @@ import { markChapterAsCompleted } from '@/data'
 import { useConfetti } from '@/hooks/use-confetti'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/locales/client'
-import MuxPlayer from '@mux/mux-player-react'
 import { Loader2, Lock } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import React from 'react'
@@ -14,7 +13,7 @@ type Props = {
     chapterId: string
     title: string
     courseId: string
-    playbackId: string
+    videoUrl: string
     isLocked: boolean
     nextChapterId?: string
     completeOnEnd: boolean
@@ -24,7 +23,7 @@ const VideoPlayer = ({
     chapterId, 
     title, 
     courseId, 
-    playbackId, 
+    videoUrl, 
     isLocked,
     nextChapterId,
     completeOnEnd
@@ -72,15 +71,17 @@ const VideoPlayer = ({
             }
             {
                 !isLocked && (
-                    <MuxPlayer 
+                    <video
                         title={title}
                         className={cn(
+                            "w-full h-full",
                             !isReady && 'hidden'
                         )}
                         onCanPlay={() => setIsReady(true)}
                         onEnded={onEnd}
                         autoPlay
-                        playbackId={playbackId}
+                        controls
+                        src={videoUrl}
                     />
                 )
             }

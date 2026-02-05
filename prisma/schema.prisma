@@ -21,6 +21,33 @@ enum Role {
   ADMIN
 }
 
+enum Permission {
+  // Course Management
+  CREATE_COURSE
+  EDIT_COURSE
+  DELETE_COURSE
+  PUBLISH_COURSE
+  
+  // User Management
+  CREATE_USER
+  EDIT_USER
+  DELETE_USER
+  MANAGE_ROLES
+  VIEW_USERS
+  
+  // Content Management
+  MANAGE_CONTENT
+  MODERATE_CONTENT
+  
+  // Analytics
+  VIEW_ANALYTICS
+  EXPORT_DATA
+  
+  // System Administration
+  MANAGE_SYSTEM
+  VIEW_LOGS
+}
+
 
 model User {
   id            String    @id @default(cuid())
@@ -30,9 +57,13 @@ model User {
   image         String?
   accounts      Account[]
   role          Role      @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  courses       Course[]
-  userProgress  UserProgress[]
+  createdCourses Course[] @relation("CourseCreator")
+  groupMemberships UserGroupMember[]
+  permissions    UserPermission[]
+  userProgress  UserProgress[] @relation("UserProgressUser")
   purchases     Purchase[]
   stripeCustomer StripeCustomer?
 }
@@ -53,8 +84,9 @@ model Course {
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
   teacherId   String
-  teacher     User     @relation(fields: [teacherId], references: [id])
+  teacher     User     @relation("CourseCreator", fields: [teacherId], references: [id])
   purchases   Purchase[]
+  userProgress UserProgress[] @relation("ProgressCourse")
 
   @@index([title], name: "course_title_index")
 }
@@ -92,7 +124,6 @@ model Chapter {
   isFree     Boolean    @default(false)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
-  muxData    MuxData?
   useProgress UserProgress[]
 
   courseId  String
@@ -100,17 +131,6 @@ model Chapter {
 }
 
 
-model MuxData {
-  id        String   @id @default(cuid())
-  assetId   String
-  playbackId String?
-  duration  Float?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  chapterId String    @unique
-  chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-}
 
 
 model UserProgress {
@@ -121,9 +141,10 @@ model UserProgress {
   updatedAt DateTime @updatedAt
 
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation("UserProgressUser", fields: [userId], references: [id], onDelete: Cascade)
   chapterId String
   chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  progress   Course[]   @relation("ProgressCourse")
 
   @@unique([userId, chapterId])
 }
@@ -178,4 +199,61 @@ model VerificationToken {
   expires    DateTime
  
   @@unique([identifier, token])
+}
+
+model UserGroup {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members     UserGroupMember[]
+  permissions  GroupPermission[]
+  
+  @@index([name], name: "user_group_name_index")
+}
+
+model UserGroupMember {
+  id         String   @id @default(cuid())
+  userId     String
+  groupId    String
+  role       Role      @default(USER)
+  joinedAt    DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group       UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+model UserPermission {
+  id          String     @id @default(cuid())
+  userId      String
+  permission  Permission
+  grantedBy   String?
+  grantedAt   DateTime   @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permission])
+  @@index([userId])
+  @@index([permission])
+}
+
+model GroupPermission {
+  id         String     @id @default(cuid())
+  groupId    String
+  permission Permission
+  grantedBy   String?
+  grantedAt   DateTime   @default(now())
+
+  group       UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, permission])
+  @@index([groupId])
+  @@index([permission])
 }
